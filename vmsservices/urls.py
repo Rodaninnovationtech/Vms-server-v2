@@ -1,5 +1,5 @@
 from django.urls import path
-from . import views,roleviews, rolepermissionviews, usercreationviews, sitetypeviews, sitemodelviews, categoryviews, sitecreationviews, tenantcreationviews, identitytypeviews, keycreationviews, visitortypeviews, passcreationviews,tenantnotificationviews,visitorcontructorcreationsviews,bancreationviews, approvalviews, preregistrationcreationviews, preregistrationapprovedviews
+from . import views,roleviews, rolepermissionviews, usercreationviews, sitetypeviews, sitemodelviews, categoryviews, sitecreationviews, tenantcreationviews, identitytypeviews, keycreationviews, visitortypeviews, passcreationviews,tenantnotificationviews,visitorcontructorcreationsviews,bancreationviews, approvalviews, preregistrationcreationviews, preregistrationapprovedviews, reportviews, bulkpreregistrationviews, dashboardviews
 
 urlpatterns = [
     path("accounts/login/", views.login_api, name="login"),
@@ -106,11 +106,29 @@ urlpatterns = [
     path("pre-registrations/delete/", preregistrationcreationviews.pre_registration_delete_api, name="pre-registration-delete"),
     path("pre-registrations/approved-list/", preregistrationapprovedviews.pre_registration_approved_list_api, name="pre-registration-approved-list"),
     path("pre-registrations/approved-check-in/", preregistrationapprovedviews.pre_registration_check_in_api, name="pre-registration-approved-check-in"),
+    path("pre-registrations/bulk-check-in/", preregistrationapprovedviews.pre_registration_bulk_check_in_api, name="pre-registration-bulk-check-in"),
+    path("pre-registrations/bulk-check-out/", preregistrationapprovedviews.pre_registration_bulk_check_out_api, name="pre-registration-bulk-check-out"),
 
     # approval
     path("approvals/approvers/", approvalviews.approver_list_api, name="approver-list"),
     path("approvals/list/", approvalviews.approval_list_api, name="approval-list"),
     path("approvals/history/", approvalviews.approval_history_api, name="approval-history"),
     path("approvals/action/", approvalviews.approval_action_api, name="approval-action"),
+    path("approvals/bulk-action/", approvalviews.approval_bulk_action_api, name="approval-bulk-action"),
+
+    # report
+    path("reports/list/", reportviews.report_list_api, name="report-list"),
+
+    # bulk pre-registration
+    path("bulk-pre-registrations/validate/", bulkpreregistrationviews.bulk_pre_registration_validate_api, name="bulk-pre-registration-validate"),
+    path("bulk-pre-registrations/create/", bulkpreregistrationviews.bulk_pre_registration_create_api, name="bulk-pre-registration-create"),
+    path("bulk-pre-registrations/approved-list/", bulkpreregistrationviews.bulk_pre_registration_approved_list_api, name="bulk-pre-registration-approved-list"),
+    path("bulk-pre-registrations/bulk-ids/", bulkpreregistrationviews.bulk_id_list_api, name="bulk-pre-registration-bulk-ids"),
+
+
+    # ---------------- dashboard ----------------
+    path("dashboard/summary/", dashboardviews.dashboard_summary_api, name="dashboard-summary"),
+    path("dashboard/not-checked-out/", dashboardviews.dashboard_not_checked_out_api, name="dashboard-not-checked-out"),
+
 
 ]

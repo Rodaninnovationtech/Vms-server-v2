@@ -1,4 +1,5 @@
 from django.core.paginator import Paginator
+from django.db import transaction
 from django.db.models import Q
 
 from .models import Site, Tenant
@@ -70,30 +71,100 @@ def _resolve_site(site_guid, user):
     return site_obj, None
 
 
-def create_tenant(
-    first_name, last_name, contact, email, tenant_name,
-    block, floor, unit, site, user,
-):
-    site_obj, error = _resolve_site(site, user)
-    if error:
-        return error
+# def create_tenant(
+#     first_name, last_name, contact, email, tenant_name,
+#     block, floor, unit, site, user,
+# ):
+#     site_obj, error = _resolve_site(site, user)
+#     if error:
+#         return error
 
-    obj = Tenant.objects.create(
-        first_name=first_name,
-        last_name=last_name,
-        contact=contact,
-        email=email,
-        tenant_name=tenant_name,
-        block=block,
-        floor=floor,
-        unit=unit,
-        site=site_obj,
-        created_by=user,
-        updated_by=user,
-    )
+#     obj = Tenant.objects.create(
+#         first_name=first_name,
+#         last_name=last_name,
+#         contact=contact,
+#         email=email,
+#         tenant_name=tenant_name,
+#         block=block,
+#         floor=floor,
+#         unit=unit,
+#         site=site_obj,
+#         created_by=user,
+#         updated_by=user,
+#     )
 
-    return {"success": True, "message": "Tenant created", "data": _serialize(obj)}
+#     return {"success": True, "message": "Tenant created", "data": _serialize(obj)}
 
+def create_tenants(items, user):
+    """items = list of validated tenant dicts. All-or-nothing:
+    if any row has a problem, nothing is saved and per-row errors are returned."""
+
+    # resolve each distinct site only once
+    site_cache = {}
+    errors = []
+
+    # for index, item in enumerate(items, start=1):
+    #     key = str(item["site"])
+    #     if key not in site_cache:
+    #         site_cache[key] = _resolve_site(item["site"], user)
+
+    #     site_obj, error = site_cache[key]
+    #     if error:
+    #         errors.append({"row": index, "message": error["message"]})
+
+    seen = set()
+
+    for index, item in enumerate(items, start=1):
+        key = str(item["site"])
+        if key not in site_cache:
+            site_cache[key] = _resolve_site(item["site"], user)
+
+        site_obj, error = site_cache[key]
+        if error:
+            errors.append({"row": index, "message": error["message"]})
+            continue
+
+        # duplicate = same email in the same site
+        dup_key = (site_obj.pk, item["email"].strip().lower())
+        if dup_key in seen:
+            errors.append({"row": index, "message": "Duplicate of an earlier row in this file"})
+        elif Tenant.objects.filter(
+            site=site_obj, email__iexact=item["email"].strip()
+        ).exists():
+            errors.append({"row": index, "message": "Tenant with this email already exists in this site"})
+        seen.add(dup_key)
+
+    if errors:
+        return {
+            "success": False,
+            "message": "Some rows could not be created",
+            "errors": errors,          # [{row, message}]  (row is 1-based)
+            "status_code": 400,
+        }
+
+    with transaction.atomic():
+        created = [
+            Tenant.objects.create(
+                first_name=item["first_name"],
+                last_name=item["last_name"],
+                contact=item["contact"],
+                email=item["email"],
+                tenant_name=item["tenant_name"],
+                block=item["block"],
+                floor=item["floor"],
+                unit=item["unit"],
+                site=site_cache[str(item["site"])][0],
+                created_by=user,
+                updated_by=user,
+            )
+            for item in items
+        ]
+
+    return {
+        "success": True,
+        "message": f"{len(created)} tenant(s) created",
+        "data": [_serialize(obj) for obj in created],
+    }
 
 def update_tenant(
     guid, first_name, last_name, contact, email, tenant_name,

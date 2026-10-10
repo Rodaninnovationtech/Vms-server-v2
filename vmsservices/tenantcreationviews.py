@@ -11,7 +11,7 @@ from .serializers import (
     TenantUpdateSerializer,
 )
 from .tenantcreationservices import (
-    create_tenant,
+    create_tenants,
     delete_tenant,
     list_tenants,
     update_tenant,
@@ -32,16 +32,83 @@ def _respond(result, ok_status=status.HTTP_200_OK):
     return Response(result, status=code)
 
 
-@extend_schema(tags=["Tenant"], summary="Create tenant", request=TenantCreateSerializer)
+# @extend_schema(tags=["Tenant"], summary="Create tenant", request=TenantCreateSerializer)
+# @api_view(["POST"])
+# @permission_classes([IsAuthenticated])
+# def tenant_create_api(request):
+#     s = TenantCreateSerializer(data=request.data)
+#     if not s.is_valid():
+#         return _invalid(s)
+#     result = create_tenant(user=request.user, **s.validated_data)
+#     return _respond(result, status.HTTP_201_CREATED)
+
+# @extend_schema(
+#     tags=["Tenant"],
+#     summary="Create tenant(s)",
+#     request=TenantCreateSerializer(many=True),
+# )
+# @api_view(["POST"])
+# @permission_classes([IsAuthenticated])
+# def _row_errors(serializer):
+#     """many=True errors come as [{}, {"email": [...]}]. Convert to [{row, message}]."""
+#     errors = serializer.errors
+#     if isinstance(errors, list):
+#         rows = []
+#         for i, e in enumerate(errors, start=1):
+#             if e:
+#                 msg = "; ".join(
+#                     f"{field}: {m[0] if isinstance(m, list) and m else m}"
+#                     for field, m in e.items()
+#                 )
+#                 rows.append({"row": i, "message": msg})
+#         if rows:
+#             return Response(
+#                 {"success": False, "message": "Some rows could not be created", "errors": rows},
+#                 status=status.HTTP_400_BAD_REQUEST,
+#             )
+#     return _invalid(serializer)
+# def tenant_create_api(request):
+#     s = TenantCreateSerializer(data=request.data, many=True, allow_empty=False)
+#     if not s.is_valid():
+#         return _invalid(s)
+#     result = create_tenants(items=s.validated_data, user=request.user)
+#     return _respond(result, status.HTTP_201_CREATED)
+
+
+def _row_errors(serializer):
+    """many=True errors come as [{}, {"email": [...]}]. Convert to [{row, message}]."""
+    errors = serializer.errors
+    if isinstance(errors, list):
+        rows = []
+        for i, e in enumerate(errors, start=1):
+            if e:
+                msg = "; ".join(
+                    f"{field}: {m[0] if isinstance(m, list) and m else m}"
+                    for field, m in e.items()
+                )
+                rows.append({"row": i, "message": msg})
+        if rows:
+            return Response(
+                {"success": False, "message": "Some rows could not be created", "errors": rows},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+    return _invalid(serializer)
+
+
+@extend_schema(
+    tags=["Tenant"],
+    summary="Create tenant(s)",
+    request=TenantCreateSerializer(many=True),
+)
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def tenant_create_api(request):
-    s = TenantCreateSerializer(data=request.data)
+    s = TenantCreateSerializer(data=request.data, many=True, allow_empty=False)
     if not s.is_valid():
-        return _invalid(s)
-    result = create_tenant(user=request.user, **s.validated_data)
+        return _row_errors(s)
+    result = create_tenants(items=s.validated_data, user=request.user)
     return _respond(result, status.HTTP_201_CREATED)
-
+    
 
 @extend_schema(tags=["Tenant"], summary="Update tenant", request=TenantUpdateSerializer)
 @api_view(["PUT"])

@@ -589,3 +589,79 @@ def act_on_request(user, guid, action, remark=""):
         "message": "Request approved" if action == "APPROVE" else "Request rejected",
         "data": serialize_request(rec, kind),
     }
+
+# ----------------------------------------------------------------------
+# approve / reject a whole bulk upload
+# ----------------------------------------------------------------------
+
+def act_on_bulk(user, bulk_id, action, remark=""):
+    """Approve / reject every PENDING request of one bulk upload in a single
+    transaction. Rows the user cannot act on (or banned people on approve)
+    are skipped and reported back."""
+    remark = (remark or "").strip()
+    approved = action == "APPROVE"
+
+    done = []      # (record, kind)
+    skipped = []   # {"guid", "person_name", "reason"}
+    found = False
+
+    with transaction.atomic():
+        for kind, model in KIND_MODELS.items():
+            qs = (
+                model.objects
+                .select_related("person", "site", "tenant", "approved_by")
+                .select_for_update(of=("self",))
+                .filter(bulk_id=bulk_id, source__in=PRE_REG_SOURCES)
+            )
+            for rec in qs:
+                found = True
+
+                if rec.approval_status != "PENDING":
+                    continue  # already decided
+
+                allowed, message = _can_act(user, rec)
+                if not allowed:
+                    skipped.append({
+                        "guid": str(rec.guid),
+                        "person_name": rec.person.person_name,
+                        "reason": message,
+                    })
+                    continue
+
+                if approved and is_person_banned(rec.person, rec.site):
+                    skipped.append({
+                        "guid": str(rec.guid),
+                        "person_name": rec.person.person_name,
+                        "reason": "Person is banned at this site",
+                    })
+                    continue
+
+                rec.approval_status = "APPROVED" if approved else "REJECTED"
+                rec.approved_by = user
+                rec.approved_at = timezone.now()
+                rec.approval_remark = remark
+                rec.save()
+                done.append((rec, kind))
+
+        if not found:
+            return _fail("Bulk upload not found", 404)
+
+        if not done:
+            return _fail("No pending requests could be actioned in this bulk", 409)
+
+        for rec, kind in done:
+            transaction.on_commit(
+                lambda rec=rec, kind=kind: send_pre_registration_decision_mail(
+                    rec, kind, user, approved
+                )
+            )
+
+    return {
+        "success": True,
+        "message": f"{len(done)} request(s) " + ("approved" if approved else "rejected"),
+        "data": {
+            "bulk_id": bulk_id,
+            "processed": len(done),
+            "skipped": skipped,
+        },
+    }

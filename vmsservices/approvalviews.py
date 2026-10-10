@@ -48,6 +48,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from .approvalservices import (
+    act_on_bulk,
     act_on_request,
     list_approval_history,
     list_approvals,
@@ -55,6 +56,7 @@ from .approvalservices import (
 )
 from .serializers import (
     ApprovalActionSerializer,
+    ApprovalBulkActionSerializer,
     ApprovalHistoryListSerializer,
     ApprovalListSerializer,
     ApproverListSerializer,
@@ -135,4 +137,20 @@ def approval_action_api(request):
     if not s.is_valid():
         return _invalid(s)
     result = act_on_request(user=request.user, **s.validated_data)
+    return _respond(result)
+
+
+
+@extend_schema(
+    tags=["Approval"],
+    summary="Approve or reject all pending requests of a bulk upload",
+    request=ApprovalBulkActionSerializer,
+)
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def approval_bulk_action_api(request):
+    s = ApprovalBulkActionSerializer(data=request.data)
+    if not s.is_valid():
+        return _invalid(s)
+    result = act_on_bulk(user=request.user, **s.validated_data)
     return _respond(result)

@@ -1421,6 +1421,22 @@ class ApprovalActionSerializer(serializers.Serializer):
         return attrs
 
 
+class ApprovalBulkActionSerializer(serializers.Serializer):
+
+    bulk_id = serializers.CharField(max_length=50)
+
+    action = serializers.ChoiceField(choices=["APPROVE", "REJECT"])
+
+    remark = serializers.CharField(required=False, allow_blank=True, default="")
+
+    def validate(self, attrs):
+        if attrs["action"] == "REJECT" and not attrs.get("remark", "").strip():
+            raise serializers.ValidationError(
+                {"remark": "Reason is required when rejecting a request"}
+            )
+        return attrs
+
+
 # ---------------------------------------------------------------------
 # pre-registration APPROVED page: list / check-in
 # ---------------------------------------------------------------------
@@ -1473,3 +1489,234 @@ class PreRegistrationCheckInSerializer(serializers.Serializer):
     key_no = serializers.CharField(max_length=50, required=False, allow_blank=True, default="")
 
     vehicle_number = serializers.CharField(max_length=50, required=False, allow_blank=True, default="")
+
+
+
+# ---------------------------------------------------------------------
+# report: check-in / check-out list
+# ---------------------------------------------------------------------
+
+# class ReportListSerializer(serializers.Serializer):
+
+#     # page / page_size null = return all rows (used by CSV export)
+#     page = BlankableIntegerField(required=False, allow_null=True)
+
+#     page_size = BlankableIntegerField(required=False, allow_null=True)
+
+#     # matches name, phone number, company, identity number, email
+#     search = serializers.CharField(required=False, allow_blank=True, default="")
+
+#     site_guid = BlankableUUIDField(required=False, allow_null=True, default=None)
+
+#     visitor_type_guid = BlankableUUIDField(required=False, allow_null=True, default=None)
+
+#     # filters on the check-in date
+#     from_date = BlankableDateField(required=False, allow_null=True, default=None)
+
+#     to_date = BlankableDateField(required=False, allow_null=True, default=None)
+
+#     def validate(self, attrs):
+#         f, t = attrs.get("from_date"), attrs.get("to_date")
+#         if f and t and t < f:
+#             raise serializers.ValidationError(
+#                 {"to_date": "To Date cannot be before From Date"}
+#             )
+#         return attrs
+
+
+class ReportListSerializer(serializers.Serializer):
+
+    # page / page_size null = return all rows (used by export)
+    page = BlankableIntegerField(required=False, allow_null=True)
+
+    page_size = BlankableIntegerField(required=False, allow_null=True)
+
+    # matches name, phone number, company, identity number, email
+    search = serializers.CharField(required=False, allow_blank=True, default="")
+
+    site_guid = BlankableUUIDField(required=False, allow_null=True, default=None)
+
+    visitor_type_guid = BlankableUUIDField(required=False, allow_null=True, default=None)
+
+    # filters on the check-in date
+    from_date = BlankableDateField(required=False, allow_null=True, default=None)
+
+    to_date = BlankableDateField(required=False, allow_null=True, default=None)
+
+    # export flag: not sent / null = normal JSON list
+    #              true = Excel file, false = PDF file
+    isexcel = serializers.BooleanField(required=False, allow_null=True, default=None)
+
+    def validate(self, attrs):
+        f, t = attrs.get("from_date"), attrs.get("to_date")
+        if f and t and t < f:
+            raise serializers.ValidationError(
+                {"to_date": "To Date cannot be before From Date"}
+            )
+        return attrs
+
+
+
+# ---------------------------------------------------------------------
+# bulk pre-registration: validate / create / approved list / bulk ids
+# ---------------------------------------------------------------------
+
+BULK_MAX_ROWS = 200
+
+_ROW_TEXT = dict(required=False, allow_blank=True, allow_null=True, default="")
+
+
+class BulkPreRegistrationRowSerializer(serializers.Serializer):
+    """One Excel row. Fields are lenient on purpose: a bad row must come back
+    as a row error, not as a 400 for the whole file."""
+
+    row_no = serializers.IntegerField(required=False, default=0)  # Excel row number
+    person_name = serializers.CharField(**_ROW_TEXT)
+    identity_type = serializers.CharField(**_ROW_TEXT)
+    identity_number = serializers.CharField(**_ROW_TEXT)
+    phone_number = serializers.CharField(**_ROW_TEXT)
+    email = serializers.CharField(**_ROW_TEXT)
+    company = serializers.CharField(**_ROW_TEXT)
+    company_phone = serializers.CharField(**_ROW_TEXT)
+    vehicle_number = serializers.CharField(**_ROW_TEXT)
+    remark = serializers.CharField(**_ROW_TEXT)
+
+
+class BulkPreRegistrationValidateSerializer(serializers.Serializer):
+
+    # chosen once on the page, applies to every row
+    site = serializers.UUIDField()                # guid of Site
+    location = serializers.UUIDField()            # guid of Tenant
+    visitor_type = serializers.UUIDField()        # guid of VisitorType
+    from_date = serializers.DateField()
+    to_date = serializers.DateField()
+    from_time = BlankableTimeField(required=False, allow_null=True, default=None)
+    to_time = BlankableTimeField(required=False, allow_null=True, default=None)
+    approver_email = serializers.EmailField()
+
+    rows = BulkPreRegistrationRowSerializer(many=True, allow_empty=False)
+
+    def validate_rows(self, value):
+        if len(value) > BULK_MAX_ROWS:
+            raise serializers.ValidationError(
+                f"A maximum of {BULK_MAX_ROWS} rows is allowed per upload"
+            )
+        return value
+
+    def validate(self, attrs):
+        f, t = attrs["from_date"], attrs["to_date"]
+        if t < f:
+            raise serializers.ValidationError(
+                {"to_date": "To Date cannot be before From Date"}
+            )
+        ft, tt = attrs.get("from_time"), attrs.get("to_time")
+        if bool(ft) != bool(tt):
+            raise serializers.ValidationError(
+                {"to_time": "Provide both From Time and To Time, or neither"}
+            )
+        if ft and tt and f == t and tt <= ft:
+            raise serializers.ValidationError(
+                {"to_time": "To Time must be after From Time"}
+            )
+        return attrs
+
+
+class BulkPreRegistrationCreateSerializer(BulkPreRegistrationValidateSerializer):
+    """Same payload as validate. The server validates again before saving."""
+
+
+class BulkPreRegistrationApprovedListSerializer(serializers.Serializer):
+
+    page = BlankableIntegerField(required=False, allow_null=True)
+    page_size = BlankableIntegerField(required=False, allow_null=True)
+    search = serializers.CharField(required=False, allow_blank=True, default="")
+    site_guid = BlankableUUIDField(required=False, allow_null=True, default=None)
+
+    # "" = every bulk upload
+    bulk_id = serializers.CharField(required=False, allow_blank=True, default="")
+
+    kind = serializers.ChoiceField(
+        choices=VISIT_KIND_VALUES, required=False, allow_blank=True, default=""
+    )
+    visit_status = serializers.ChoiceField(
+        choices=PRE_REG_VISIT_STATUS_VALUES,
+        required=False,
+        allow_blank=True,
+        default="",
+    )
+    from_date = BlankableDateField(required=False, allow_null=True, default=None)
+    to_date = BlankableDateField(required=False, allow_null=True, default=None)
+
+    def validate(self, attrs):
+        f, t = attrs.get("from_date"), attrs.get("to_date")
+        if f and t and t < f:
+            raise serializers.ValidationError(
+                {"to_date": "To Date cannot be before From Date"}
+            )
+        return attrs
+
+
+class BulkIdListSerializer(serializers.Serializer):
+
+    site_guid = BlankableUUIDField(required=False, allow_null=True, default=None)
+    search = serializers.CharField(required=False, allow_blank=True, default="")
+
+
+class PreRegistrationBulkCheckInSerializer(serializers.Serializer):
+
+    bulk_id = serializers.CharField(max_length=50)
+
+    pass_no = serializers.CharField(max_length=50, required=False, allow_blank=True, default="")
+
+    key_no = serializers.CharField(max_length=50, required=False, allow_blank=True, default="")
+
+
+class PreRegistrationBulkCheckOutSerializer(serializers.Serializer):
+
+    bulk_id = serializers.CharField(max_length=50)
+
+
+
+# >>> Append this block to the END of serializers.py <<<
+# (uses BlankableIntegerField / BlankableUUIDField / BlankableDateField and
+#  VISIT_KIND_VALUES, all defined earlier in the file)
+
+# ---------------------------------------------------------------------
+# dashboard: summary + not-checked-out list
+# ---------------------------------------------------------------------
+
+class DashboardSummarySerializer(serializers.Serializer):
+
+    # null / "" = all sites (super admin) or own site (normal user)
+    site_guid = BlankableUUIDField(required=False, allow_null=True, default=None)
+
+    # check-in / check-out date range. Missing = last 30 days.
+    from_date = BlankableDateField(required=False, allow_null=True, default=None)
+
+    to_date = BlankableDateField(required=False, allow_null=True, default=None)
+
+    def validate(self, attrs):
+        f, t = attrs.get("from_date"), attrs.get("to_date")
+        if f and t and t < f:
+            raise serializers.ValidationError(
+                {"to_date": "To Date cannot be before From Date"}
+            )
+        return attrs
+
+
+class DashboardNotCheckedOutSerializer(DashboardSummarySerializer):
+
+    page = BlankableIntegerField(required=False, allow_null=True)
+
+    page_size = BlankableIntegerField(required=False, allow_null=True)
+
+    # matches name, identity number, phone, company, location, pass number
+    search = serializers.CharField(required=False, allow_blank=True, default="")
+
+    # "" = both visitors and contractors
+    kind = serializers.ChoiceField(
+        choices=VISIT_KIND_VALUES,
+        required=False,
+        allow_blank=True,
+        default="",
+    )

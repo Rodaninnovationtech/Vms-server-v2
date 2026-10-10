@@ -5,12 +5,16 @@ from rest_framework.permissions import IsAuthenticated
 
 from .preregistrationapprovedservices import (
     check_in_pre_registration,
+    check_in_bulk_pre_registration,
+    check_out_bulk_pre_registration,
     list_approved_pre_registrations,
 )
 from .preregistrationcreationviews import _invalid, _respond
 from .serializers import (
     PreRegistrationApprovedListSerializer,
     PreRegistrationCheckInSerializer,
+    PreRegistrationBulkCheckInSerializer,
+    PreRegistrationBulkCheckOutSerializer,
 )
 
 
@@ -41,4 +45,34 @@ def pre_registration_check_in_api(request):
     if not s.is_valid():
         return _invalid(s)
     result = check_in_pre_registration(user=request.user, **s.validated_data)
+    return _respond(result)
+
+
+@extend_schema(
+    tags=["Pre-Registration"],
+    summary="Bulk check-in by bulk_id",
+    request=PreRegistrationBulkCheckInSerializer,
+)
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def pre_registration_bulk_check_in_api(request):
+    s = PreRegistrationBulkCheckInSerializer(data=request.data)
+    if not s.is_valid():
+        return _invalid(s)
+    result = check_in_bulk_pre_registration(user=request.user, **s.validated_data)
+    return _respond(result)
+
+
+@extend_schema(
+    tags=["Pre-Registration"],
+    summary="Bulk check-out by bulk_id",
+    request=PreRegistrationBulkCheckOutSerializer,
+)
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def pre_registration_bulk_check_out_api(request):
+    s = PreRegistrationBulkCheckOutSerializer(data=request.data)
+    if not s.is_valid():
+        return _invalid(s)
+    result = check_out_bulk_pre_registration(user=request.user, **s.validated_data)
     return _respond(result)
